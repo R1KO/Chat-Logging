@@ -2,33 +2,35 @@
 
 #include <sourcemod>
 #include <sdktools>
+#include <basecomm>
+
 #if SOURCEMOD_V_MINOR > 7
 #pragma newdecls required
 #endif
 
 #if SOURCEMOD_V_MINOR > 7
 Database g_hDatabase;
-char g_sTable[32];
 bool g_bIsLog[10];
 ConVar g_hServerID;
 
 static const char g_sSay[][] = {"say", "say_team", "sm_say", "sm_chat", "sm_csay", "sm_tsay", "sm_msay", "sm_hsay", "sm_psay"};
+static const char g_sTable[] = "chatlog";
 
 public Plugin myinfo = 
 #else
 new Handle:g_hDatabase;
-new String:g_sTable[32];
 new bool:g_bIsLog[10];
 new Handle:g_hServerID;
 
 new const String:g_sSay[][] = {"say", "say_team", "sm_say", "sm_chat", "sm_csay", "sm_tsay", "sm_msay", "sm_hsay", "sm_psay"};
+new const String:g_sTable[] = "chatlog";
 
 public Plugin:myinfo = 
 #endif
 {
 	name = "Chat Logging",
 	author = "R1KO",
-	version = "2.2"
+	version = "2.3"
 }
 
 #define SZF(%0) 	%0, sizeof(%0)
@@ -39,22 +41,13 @@ public void OnPluginStart()
 public OnPluginStart()
 #endif
 {
+	g_hServerID = CreateConVar("sm_chat_log_server_id", "1", "ID сервера");
+
 	#if SOURCEMOD_V_MINOR > 7
 	ConVar hCvar;
 	#else
 	decl Handle:hCvar;
 	#endif
-
-	hCvar = CreateConVar("sm_chat_log_table", "chatlog", "Таблица логов чата в базе данных");
-	#if SOURCEMOD_V_MINOR > 7
-	hCvar.AddChangeHook(OnTableChange);
-	hCvar.GetString(SZF(g_sTable));
-	#else
-	HookConVarChange(hCvar, OnTableChange);
-	GetConVarString(hCvar, SZF(g_sTable));
-	#endif
-
-	g_hServerID = CreateConVar("sm_chat_log_server_id", "1", "ID сервера");
 
 	RegConVar(hCvar, "sm_chat_log_triggers", "0", "Запись в лог чат-триггеров", OnLogTriggersChange, 9);
 	RegConVar(hCvar, "sm_chat_log_say", "1", "Запись в лог общего чата", OnLogSayChange, 0);
@@ -74,7 +67,20 @@ public OnPluginStart()
 	#else
 	for(new i = 0; i < sizeof(g_sSay); ++i)
 	#endif
+	{
 		AddCommandListener(Say_Callback, g_sSay[i]);
+	}
+
+	if(!SQL_CheckConfig("chatlog"))
+	{
+		SetFailState("[CHAT LOG] Database failure: Could not find Database conf \"chatlog\"");
+		return;
+	}
+	#if SOURCEMOD_V_MINOR > 7
+	Database.Connect(SQL_OnConnect, "chatlog");
+	#else
+	SQL_TConnect(SQL_OnConnect, "chatlog");
+	#endif
 }
 
 #if SOURCEMOD_V_MINOR > 7
@@ -84,31 +90,7 @@ void RegConVar(ConVar &hCvar, const char[] sCvar, const char[] sDefValue, const 
 	hCvar.AddChangeHook(callback);
 	g_bIsLog[index] = hCvar.BoolValue;
 }
-#else
-RegConVar(&Handle:hCvar, const String:sCvar[], const String:sDefValue[], const String:sDesc[], ConVarChanged:callback, index)
-{
-	hCvar = CreateConVar(sCvar, sDefValue, sDesc, _, true, 0.0, true, 1.0);
-	HookConVarChange(hCvar, callback);
-	g_bIsLog[index] = GetConVarBool(hCvar);
-}
-#endif
 
-#if SOURCEMOD_V_MINOR > 7
-public void OnTableChange(ConVar hCvar, const char[] oldValue, const char[] newValue)
-#else
-public OnTableChange(Handle:hCvar, const String:oldValue[], const String:newValue[])
-#endif
-{
-	#if SOURCEMOD_V_MINOR > 7
-	hCvar.GetString(SZF(g_sTable));
-	#else
-	GetConVarString(hCvar, g_sTable, sizeof(g_sTable));
-	#endif
-
-	OnConfigsExecuted();
-}
-
-#if SOURCEMOD_V_MINOR > 7
 public void OnLogTriggersChange(ConVar hCvar, const char[] oldValue, const char[] newValue) { g_bIsLog[9] = GetConVarBool(hCvar); }
 public void OnLogSayChange(ConVar hCvar, const char[] oldValue, const char[] newValue) { g_bIsLog[0] = GetConVarBool(hCvar); }
 public void OnLogSayTeamChange(ConVar hCvar, const char[] oldValue, const char[] newValue) { g_bIsLog[1] = GetConVarBool(hCvar); }
@@ -120,6 +102,13 @@ public void OnLogMSayChange(ConVar hCvar, const char[] oldValue, const char[] ne
 public void OnLogHSayChange(ConVar hCvar, const char[] oldValue, const char[] newValue) { g_bIsLog[7] = GetConVarBool(hCvar); }
 public void OnLogPSayChange(ConVar hCvar, const char[] oldValue, const char[] newValue) { g_bIsLog[8] = GetConVarBool(hCvar); }
 #else
+RegConVar(&Handle:hCvar, const String:sCvar[], const String:sDefValue[], const String:sDesc[], ConVarChanged:callback, index)
+{
+	hCvar = CreateConVar(sCvar, sDefValue, sDesc, _, true, 0.0, true, 1.0);
+	HookConVarChange(hCvar, callback);
+	g_bIsLog[index] = GetConVarBool(hCvar);
+}
+
 public OnLogTriggersChange(Handle:hCvar, const String:oldValue[], const String:newValue[]) g_bIsLog[9] = GetConVarBool(hCvar);
 public OnLogSayChange(Handle:hCvar, const String:oldValue[], const String:newValue[]) g_bIsLog[0] = GetConVarBool(hCvar);
 public OnLogSayTeamChange(Handle:hCvar, const String:oldValue[], const String:newValue[]) g_bIsLog[1] = GetConVarBool(hCvar);
@@ -161,6 +150,11 @@ public Action:Say_Callback(iClient, const String:sCommand[], args)
 			{
 				if(strcmp(sCommand, g_sSay[i]) == 0 && g_bIsLog[i])
 				{
+					if(i < 2 && BaseComm_IsClientGagged(iClient))
+					{
+						return Plugin_Handled;
+					}
+
 					#if SOURCEMOD_V_MINOR >= 7
 					DBStatement hStmt;
 					
@@ -225,38 +219,6 @@ public Action:Say_Callback(iClient, const String:sCommand[], args)
 }
 
 #if SOURCEMOD_V_MINOR > 7
-public void OnConfigsExecuted()
-#else
-public OnConfigsExecuted()
-#endif
-{
-	#if SOURCEMOD_V_MINOR > 7
-	if(g_hDatabase != null)
-	{
-		delete g_hDatabase;
-		g_hDatabase = null;
-	}
-	#else
-	if(g_hDatabase != INVALID_HANDLE)
-	{
-		CloseHandle(g_hDatabase);
-		g_hDatabase = INVALID_HANDLE;
-	}
-	#endif
-
-	if(!SQL_CheckConfig("chatlog"))
-	{
-		SetFailState("[CHAT LOG] Database failure: Could not find Database conf \"chatlog\"");
-		return;
-	}
-	#if SOURCEMOD_V_MINOR > 7
-	Database.Connect(SQL_OnConnect, "chatlog");
-	#else
-	SQL_TConnect(SQL_OnConnect, "chatlog");
-	#endif
-}
-
-#if SOURCEMOD_V_MINOR > 7
 public void SQL_CheckError(Database hDB, DBResultSet hResults, const char[] sError, any data)
 #else
 public SQL_CheckError(Handle:hDB, Handle:hResults, const String:sError[], any:data)
@@ -313,12 +275,10 @@ public SQL_OnConnect(Handle:hDriver, Handle:hDatabase, const String:sError[], an
 		SQL_FastQuery(g_hDatabase, "SET NAMES 'utf8'");
 		SQL_FastQuery(g_hDatabase, "SET CHARSET 'utf8'");
 
-		#if SOURCEMOD_V_MINOR >= 5
 		#if SOURCEMOD_V_MINOR > 7
 		g_hDatabase.SetCharset("utf8");
 		#else
 		SQL_SetCharset(g_hDatabase, "utf8");
-		#endif
 		#endif
 	}
 }

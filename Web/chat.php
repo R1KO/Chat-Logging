@@ -115,7 +115,7 @@ $count = count($data);
 						$ingame = (bool)($msg_info['team'] == 0);
 						
 						# Игрок жив/мертв
-						if ($msg_info['team'] > 1) AND (!$msg_info['alive'])) print "<span style=\"color: #ffb000;\">*DEAD*</span> ";
+						if ($msg_info['team'] > 1 && !$msg_info['alive']) print "<span style=\"color: #ffb000;\">*DEAD*</span> ";
 						
 						# Приставки в зависимости от типа сообщения (basechat)
 						if ($msg_info['type'] == "sm_hsay") print "<span class=\"text-success\">[HSAY]</span>";

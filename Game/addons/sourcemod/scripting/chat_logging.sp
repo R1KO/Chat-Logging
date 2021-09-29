@@ -17,7 +17,7 @@ public Plugin myinfo =
 	name = "Chat Logging",
 	description = "Logs all server chat (and all administrator messages)",
 	author = "R1KO",
-	version = "3.0"
+	version = "3.0",
 	url = "https://github.com/R1KO/Chat-Logging"
 }
 
